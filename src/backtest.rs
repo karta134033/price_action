@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::default;
 
 use chrono::NaiveDateTime;
 use log::{info, warn};
@@ -59,19 +58,20 @@ impl Backtest {
     }
 
     pub fn add_history(&mut self, kline: Kline) {
-        let mut highest: f64 = kline.close;
-        let mut lowest: f64 = kline.close;
-        for index in 0..self.high.len() {
-            highest = highest.max(self.high[index]);
-            lowest = lowest.min(self.low[index]);
-        }
+        let mut highest: f64 = f64::MIN;
+        let mut lowest: f64 = f64::MAX;
+
+        self.high.clear();
+        self.low.clear();
         self.kline_history.push_back(kline);
-        self.high.push_back(highest);
-        self.low.push_back(lowest);
+        for k in &self.kline_history {
+            highest = highest.max(k.close);
+            lowest = lowest.min(k.close);
+            self.high.push_back(highest);
+            self.low.push_back(lowest);
+        }
         if self.kline_history.len() > self.look_back_count {
             self.kline_history.pop_front();
-            self.high.pop_front();
-            self.low.pop_front();
         }
     }
 
