@@ -46,4 +46,7 @@ pub struct Kline {
 pub struct SettingConfig {
     pub from: String,
     pub to: String,
+    pub initial_captial: f64,
+    pub fee_rate: f64,
+    pub kline_percentage: f64,
 }

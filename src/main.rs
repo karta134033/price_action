@@ -3,7 +3,8 @@ use std::fs::File;
 use clap::Parser;
 use log::{info, LevelFilter};
 use price_action::{
-    types::{Cli, SettingConfig},
+    backtest::Backtest,
+    types::{Cli, Mode, SettingConfig},
     utils::get_klines_from_db,
 };
 use simplelog::{ColorChoice, CombinedLogger, Config, TermLogger, TerminalMode};
@@ -23,4 +24,11 @@ fn main() {
 
     let klines = get_klines_from_db(&config.from, &config.to);
     info!("klines num: {:?}", klines.len());
+    match args.mode {
+        Mode::Backtest => {
+            let mut backtest = Backtest::new(config);
+            backtest.run(klines);
+        }
+        Mode::Hypertune => todo!(),
+    }
 }
