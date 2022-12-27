@@ -24,6 +24,7 @@ pub struct BacktestMetric {
     initial_captial: f64,
     usd_balance: f64,
     position: f64,
+    exit_price: f64,
     entry_price: f64,
     entry_side: TradeSide,
     tp_price: f64, // take profit
@@ -100,30 +101,32 @@ impl Backtest {
                     metric.position = metric.usd_balance * self.entry_portion / entry_price;
                     metric.entry_side = TradeSide::Buy;
                     metric.sl_price = entry_price - sl_price_diff;
-                    metric.tp_price = entry_price + 4. * sl_price_diff;
+                    metric.tp_price = entry_price + 1.5 * sl_price_diff;
                     metric.fee = metric.entry_price * metric.position * self.fee_rate;
                     metric.total_fee += metric.fee;
                 }
             } else if metric.position != 0. {
                 if metric.entry_side == TradeSide::Buy {
                     if kline.low <= metric.sl_price {
-                        let profit = (metric.tp_price - metric.entry_price) * metric.position;
+                        let profit = (metric.sl_price - metric.entry_price) * metric.position;
                         metric.usd_balance += profit;
-                        metric.win += 1;
+                        metric.lose += 1;
                         metric.fee = metric.tp_price * metric.position * self.fee_rate;
                         metric.total_fee += metric.fee;
                         metric.profit = profit;
                         metric.total_profit += profit;
+                        metric.exit_price = metric.sl_price;
                         trade_log(&metric, &kline);
                         metric.init_trade();
                     } else if kline.high >= metric.tp_price {
-                        let profit = (metric.sl_price - metric.entry_price) * metric.position;
+                        let profit = (metric.tp_price - metric.entry_price) * metric.position;
                         metric.usd_balance += profit;
-                        metric.lose += 1;
+                        metric.win += 1;
                         metric.fee = metric.sl_price * metric.position * self.fee_rate;
                         metric.total_fee += metric.fee;
                         metric.profit = profit;
                         metric.total_profit += profit;
+                        metric.exit_price = metric.tp_price;
                         trade_log(&metric, &kline);
                         metric.init_trade();
                     }
@@ -158,6 +161,7 @@ fn trade_log(metric: &BacktestMetric, curr_kline: &Kline) {
     msg += &format!("usd_balance: {:.4}, ", metric.usd_balance);
     msg += &format!("position: {:.4}, ", metric.position);
     msg += &format!("entry_price: {:.4}, ", metric.entry_price);
+    msg += &format!("exit_price: {:.4}, ", metric.exit_price);
     msg += &format!("profit: {:.4}, ", metric.profit);
     msg += &format!("fee: {:.4}, ", metric.fee);
 
