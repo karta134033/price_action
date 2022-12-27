@@ -49,4 +49,5 @@ pub struct SettingConfig {
     pub initial_captial: f64,
     pub fee_rate: f64,
     pub kline_percentage: f64,
+    pub entry_portion: f64,
 }
