@@ -46,7 +46,7 @@ pub struct Trade {
 impl Backtest {
     pub fn new(config: SettingConfig) -> Backtest {
         Backtest {
-            look_back_count: 20,
+            look_back_count: config.look_back_count,
             kline_percentage: config.kline_percentage,
             kline_history: VecDeque::new(),
             high: VecDeque::new(),
@@ -154,7 +154,7 @@ impl Backtest {
                 let entry_side = TradeSide::Buy;
                 let sl_price_diff = f64::abs(entry_price - self.low[self.low.len() - 1]);
                 let sl_price = entry_price - sl_price_diff;
-                let tp_price = entry_price + 1.6 * sl_price_diff;
+                let tp_price = entry_price + 1.5 * sl_price_diff;
                 let position = metric.initial_captial * self.entry_portion / entry_price;
                 let trade = Trade {
                     entry_price,
@@ -177,7 +177,7 @@ impl Backtest {
                 let entry_side = TradeSide::Sell;
                 let sl_price_diff = f64::abs(entry_price - self.high[self.high.len() - 1]);
                 let sl_price = entry_price + sl_price_diff;
-                let tp_price = entry_price - 1.6 * sl_price_diff;
+                let tp_price = entry_price - 1.5 * sl_price_diff;
                 let position = metric.initial_captial * self.entry_portion / entry_price;
                 let trade = Trade {
                     entry_price,
