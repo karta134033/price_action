@@ -23,12 +23,6 @@ pub struct Backtest {
 pub struct BacktestMetric {
     initial_captial: f64,
     usd_balance: f64,
-    position: f64,
-    exit_price: f64,
-    entry_price: f64,
-    entry_side: TradeSide,
-    tp_price: f64, // take profit
-    sl_price: f64, // stop loss
     win: usize,
     lose: usize,
     total_fee: f64,
@@ -39,14 +33,14 @@ pub struct BacktestMetric {
     profit: f64,
 }
 
-impl BacktestMetric {
-    pub fn init_trade(&mut self) {
-        self.position = 0.;
-        self.entry_price = 0.;
-        self.tp_price = 0.;
-        self.sl_price = 0.;
-        self.entry_side = TradeSide::None;
-    }
+#[derive(Default)]
+pub struct Trade {
+    entry_price: f64,
+    entry_side: TradeSide,
+    exit_price: f64,
+    position: f64,
+    tp_price: f64, // take profit
+    sl_price: f64, // stop loss
 }
 
 impl Backtest {
@@ -87,50 +81,114 @@ impl Backtest {
             initial_captial: self.initial_captial,
             ..Default::default()
         };
+
+        let mut trades = Vec::new();
+        let mut has_long = false;
+        let mut has_short = false;
         for kline in klines {
-            self.add_history(kline.clone());
-            let kline_percentage = (kline.close - kline.open) / kline.open;
-            if metric.entry_side == TradeSide::None {
-                if self.higher_high()
-                    && self.higher_low()
-                    && kline_percentage >= self.kline_percentage
-                {
-                    let entry_price = kline.close;
-                    let sl_price_diff = f64::abs(entry_price - self.low[self.low.len() - 1]);
-                    metric.entry_price = entry_price;
-                    metric.position = metric.usd_balance * self.entry_portion / entry_price;
-                    metric.entry_side = TradeSide::Buy;
-                    metric.sl_price = entry_price - sl_price_diff;
-                    metric.tp_price = entry_price + 1.5 * sl_price_diff;
-                    metric.fee = metric.entry_price * metric.position * self.fee_rate;
-                    metric.total_fee += metric.fee;
-                }
-            } else if metric.position != 0. {
-                if metric.entry_side == TradeSide::Buy {
-                    if kline.low <= metric.sl_price {
-                        let profit = (metric.sl_price - metric.entry_price) * metric.position;
+            trades.retain_mut(|trade: &mut Trade| {
+                if trade.entry_side == TradeSide::Buy {
+                    if kline.low <= trade.sl_price {
+                        let profit = (trade.sl_price - trade.entry_price) * trade.position;
                         metric.usd_balance += profit;
                         metric.lose += 1;
-                        metric.fee = metric.tp_price * metric.position * self.fee_rate;
+                        metric.fee = trade.tp_price * trade.position * self.fee_rate;
                         metric.total_fee += metric.fee;
                         metric.profit = profit;
                         metric.total_profit += profit;
-                        metric.exit_price = metric.sl_price;
-                        trade_log(&metric, &kline);
-                        metric.init_trade();
-                    } else if kline.high >= metric.tp_price {
-                        let profit = (metric.tp_price - metric.entry_price) * metric.position;
+                        trade.exit_price = trade.sl_price;
+                        trade_log(&metric, &trade, &kline);
+                        has_long = false;
+                        return false;
+                    } else if kline.high >= trade.tp_price {
+                        let profit = (trade.tp_price - trade.entry_price) * trade.position;
                         metric.usd_balance += profit;
                         metric.win += 1;
-                        metric.fee = metric.sl_price * metric.position * self.fee_rate;
+                        metric.fee = trade.sl_price * trade.position * self.fee_rate;
                         metric.total_fee += metric.fee;
                         metric.profit = profit;
                         metric.total_profit += profit;
-                        metric.exit_price = metric.tp_price;
-                        trade_log(&metric, &kline);
-                        metric.init_trade();
+                        trade.exit_price = trade.tp_price;
+                        trade_log(&metric, &trade, &kline);
+                        has_long = false;
+                        return false;
+                    }
+                } else if trade.entry_side == TradeSide::Sell {
+                    if kline.high >= trade.sl_price {
+                        let profit = (trade.entry_price - trade.sl_price) * trade.position;
+                        metric.usd_balance += profit;
+                        metric.lose += 1;
+                        metric.fee = trade.sl_price * trade.position * self.fee_rate;
+                        metric.total_fee += metric.fee;
+                        metric.profit = profit;
+                        metric.total_profit += profit;
+                        trade.exit_price = trade.sl_price;
+                        trade_log(&metric, &trade, &kline);
+                        has_short = false;
+                        return false;
+                    } else if kline.low <= trade.tp_price {
+                        let profit = (trade.entry_price - trade.tp_price) * trade.position;
+                        metric.usd_balance += profit;
+                        metric.win += 1;
+                        metric.fee = trade.tp_price * trade.position * self.fee_rate;
+                        metric.total_fee += metric.fee;
+                        metric.profit = profit;
+                        metric.total_profit += profit;
+                        trade.exit_price = trade.tp_price;
+                        trade_log(&metric, &trade, &kline);
+                        has_short = false;
+                        return false;
                     }
                 }
+                true
+            });
+
+            self.add_history(kline.clone());
+            let kline_percentage = (kline.close - kline.open) / kline.open;
+            if self.higher_high()
+                && self.higher_low()
+                && kline_percentage >= self.kline_percentage
+                && !has_long
+            {
+                let entry_price = kline.close;
+                let entry_side = TradeSide::Buy;
+                let sl_price_diff = f64::abs(entry_price - self.low[self.low.len() - 1]);
+                let sl_price = entry_price - sl_price_diff;
+                let tp_price = entry_price + 1.6 * sl_price_diff;
+                let position = metric.initial_captial * self.entry_portion / entry_price;
+                let trade = Trade {
+                    entry_price,
+                    entry_side,
+                    tp_price,
+                    sl_price,
+                    position,
+                    exit_price: -1.,
+                };
+                trades.push(trade);
+                has_long = true;
+            }
+
+            if self.lower_low()
+                && self.lower_high()
+                && kline_percentage <= self.kline_percentage
+                && !has_short
+            {
+                let entry_price = kline.close;
+                let entry_side = TradeSide::Sell;
+                let sl_price_diff = f64::abs(entry_price - self.high[self.high.len() - 1]);
+                let sl_price = entry_price + sl_price_diff;
+                let tp_price = entry_price - 1.6 * sl_price_diff;
+                let position = metric.initial_captial * self.entry_portion / entry_price;
+                let trade = Trade {
+                    entry_price,
+                    entry_side,
+                    tp_price,
+                    sl_price,
+                    position,
+                    exit_price: -1.,
+                };
+                trades.push(trade);
+                has_short = true;
             }
         }
     }
@@ -150,18 +208,35 @@ impl Backtest {
             false
         }
     }
+
+    pub fn lower_low(&mut self) -> bool {
+        if self.low.len() >= self.look_back_count {
+            self.low[self.look_back_count - 2] > self.low[self.look_back_count - 1]
+        } else {
+            false
+        }
+    }
+
+    pub fn lower_high(&mut self) -> bool {
+        if self.low.len() >= self.look_back_count {
+            self.high[self.look_back_count - 2] == self.high[self.look_back_count - 1]
+        } else {
+            false
+        }
+    }
 }
 
-fn trade_log(metric: &BacktestMetric, curr_kline: &Kline) {
+fn trade_log(metric: &BacktestMetric, trade: &Trade, curr_kline: &Kline) {
     let curr_date = NaiveDateTime::from_timestamp_millis(curr_kline.close_time).unwrap();
     let mut msg = "".to_string();
     msg += &format!("date: {:?}, ", curr_date);
     msg += &format!("win: {:?}, ", metric.win);
     msg += &format!("lose: {:?}, ", metric.lose);
     msg += &format!("usd_balance: {:.4}, ", metric.usd_balance);
-    msg += &format!("position: {:.4}, ", metric.position);
-    msg += &format!("entry_price: {:.4}, ", metric.entry_price);
-    msg += &format!("exit_price: {:.4}, ", metric.exit_price);
+    msg += &format!("position: {:.4}, ", trade.position);
+    msg += &format!("entry_side: {:?}, ", trade.entry_side);
+    msg += &format!("entry_price: {:.4}, ", trade.entry_price);
+    msg += &format!("exit_price: {:.4}, ", trade.exit_price);
     msg += &format!("profit: {:.4}, ", metric.profit);
     msg += &format!("fee: {:.4}, ", metric.fee);
 
